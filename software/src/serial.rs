@@ -26,9 +26,13 @@ pub fn communicate(port: &mut Port, input: &[u8]) -> Vec<u8> {
 
 pub fn read_data(port: &mut Port, addr: u32, words: u32) -> Vec<u8> {
     write(port, format!("rd {addr} {words}\n").as_bytes()).unwrap();
-    let len = words*4;
+    let len = words * 4;
     let data = read_len(port, len);
-    let crc = u32::from_le_bytes(read_len(port, 4).try_into().expect("reading exactly 4 bytes"));
+    let crc = u32::from_le_bytes(
+        read_len(port, 4)
+            .try_into()
+            .expect("reading exactly 4 bytes"),
+    );
     assert_eq!(b"Done".to_vec(), read_len(port, 4));
     assert_eq!(crc, calculate_crc(&data));
     data
@@ -40,7 +44,8 @@ pub fn write_chunk(port: &mut Port, chunk: &[u8]) {
 }
 
 fn write(port: &mut Port, input: &[u8]) -> Result<(), Error> {
-    port.clear(serialport::ClearBuffer::Output).or(Err(Error::ClearFailed))?;
+    port.clear(serialport::ClearBuffer::Output)
+        .or(Err(Error::ClearFailed))?;
     port.write(input).or(Err(Error::WriteFailed))?;
     port.flush().or(Err(Error::FlushFailed))
 }
@@ -51,7 +56,7 @@ fn read_to_stars(port: &mut Port) -> Result<Vec<u8>, Error> {
     for vahtikoira in 0..100 {
         let mut serial_buf = [0u8; 256];
         if port.read(&mut serial_buf).is_err() {
-            continue
+            continue;
         };
         if let Some(pos) = searcher.search_in(&serial_buf) {
             out.extend_from_slice(&serial_buf.split_at(pos).0.to_owned());

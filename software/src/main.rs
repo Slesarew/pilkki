@@ -68,7 +68,7 @@ fn main() {
         Some(("connect", _)) => {
             let res = connect(&mut port);
             println!("{}", String::from_utf8(res.clone()).unwrap());
-        },
+        }
 
         Some(("crc", sub_matches)) => {
             let addr = if let Some(ref a) = sub_matches.get_one::<String>("addr") {
@@ -85,8 +85,13 @@ fn main() {
                 len_text = "CRC of available memory".to_string();
                 None
             };
-            println!("{} starting from 0x{:08X} is 0x{:08X}", len_text, addr, read_crc(&mut port, addr, len));
-        },
+            println!(
+                "{} starting from 0x{:08X} is 0x{:08X}",
+                len_text,
+                addr,
+                read_crc(&mut port, addr, len)
+            );
+        }
 
         Some(("erase", sub_matches)) => {
             let addr = if let Some(ref a) = sub_matches.get_one::<String>("addr") {
@@ -101,19 +106,19 @@ fn main() {
                 None
             };
             erase(&mut port, addr, len);
-        },
+        }
 
         Some(("halt", _)) => {
             let req = "\nhalt\n".as_bytes();
             let res = simple_command(&mut port, req);
             println!("{}", String::from_utf8(res.clone()).unwrap());
-        },
+        }
 
         Some(("id", _)) => {
             let req = "\nid\n".as_bytes();
             let res = simple_command(&mut port, req);
             println!("{}", String::from_utf8(res.clone()).unwrap());
-        },
+        }
 
         Some(("read", sub_matches)) => {
             let addr = if let Some(ref a) = sub_matches.get_one::<String>("addr") {
@@ -126,22 +131,29 @@ fn main() {
             } else {
                 None
             };
-            let filename = if let Some(a) = sub_matches.get_one::<String>("output") { a } else { "out.bin" };
+            let filename = if let Some(a) = sub_matches.get_one::<String>("output") {
+                a
+            } else {
+                "out.bin"
+            };
             std::fs::write(filename, read_c(&mut port, addr, len)).unwrap();
-
-        },
+        }
 
         Some(("reset", sub_matches)) => {
-            let req = if sub_matches.get_flag("hard") {cmd("reser -h")} else {cmd("reset")};
+            let req = if sub_matches.get_flag("hard") {
+                cmd("reser -h")
+            } else {
+                cmd("reset")
+            };
             let res = simple_command(&mut port, &req);
             println!("{}", String::from_utf8(res.clone()).unwrap());
-        },
+        }
 
         Some(("run", _)) => {
             let req = "\nrun\n".as_bytes();
             let res = simple_command(&mut port, req);
             println!("{}", String::from_utf8(res.clone()).unwrap());
-        },
+        }
 
         Some(("write", sub_matches)) => {
             let addr = if let Some(ref a) = sub_matches.get_one::<String>("addr") {
@@ -154,7 +166,9 @@ fn main() {
             } else {
                 None
             };
-            let filename = if let Some(a) = sub_matches.get_one::<String>("input") { a } else {
+            let filename = if let Some(a) = sub_matches.get_one::<String>("input") {
+                a
+            } else {
                 unreachable!();
             };
             write_c(&mut port, std::fs::read(filename).unwrap(), addr, len);
