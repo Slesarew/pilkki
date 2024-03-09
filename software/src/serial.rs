@@ -1,6 +1,6 @@
 use crate::ecc::calculate_crc;
 use memmem::{Searcher, TwoWaySearcher};
-use serialport::{ClearBuffer, SerialPort};
+use serialport::{SerialPort};
 use std::{io::Read, time::Duration};
 
 pub type Port = Box<dyn SerialPort>;
@@ -10,7 +10,7 @@ pub fn connect_port(port_name: Option<&String>) -> Result<Port, serialport::Erro
     let port = if let Some(a) = port_name {
         a
     } else {
-        &ports.get(0).unwrap().port_name
+        &ports.first().unwrap().port_name
     };
     println!("{}", port);
     Ok(serialport::new(port, 9600)
@@ -20,12 +20,12 @@ pub fn connect_port(port_name: Option<&String>) -> Result<Port, serialport::Erro
 }
 
 pub fn communicate(port: &mut Port, input: &[u8]) -> Vec<u8> {
-    write(port, input).unwrap();
-    read_to_stars(port).unwrap()
+    write(port, input);
+    read_to_stars(port)
 }
 
 pub fn read_data(port: &mut Port, addr: u32, words: u32) -> Vec<u8> {
-    write(port, format!("rd {addr} {words}\n").as_bytes()).unwrap();
+    write(port, format!("rd {addr} {words}\n").as_bytes());
     let len = words * 4;
     let data = read_len(port, len);
     let crc = u32::from_le_bytes(
@@ -39,34 +39,33 @@ pub fn read_data(port: &mut Port, addr: u32, words: u32) -> Vec<u8> {
 }
 
 pub fn write_chunk(port: &mut Port, chunk: &[u8]) {
-    port.write(chunk).unwrap();
-    let _dump = read_to_stars(port).unwrap();
+    port.write_all(chunk).unwrap();
+    let _dump = read_to_stars(port);
 }
 
-fn write(port: &mut Port, input: &[u8]) -> Result<(), Error> {
-    port.clear(serialport::ClearBuffer::Output)
-        .or(Err(Error::ClearFailed))?;
-    port.write(input).or(Err(Error::WriteFailed))?;
-    port.flush().or(Err(Error::FlushFailed))
+fn write(port: &mut Port, input: &[u8]) {
+    port.clear(serialport::ClearBuffer::Output).unwrap();
+    port.write_all(input).unwrap();
+    port.flush().unwrap()
 }
 
-fn read_to_stars(port: &mut Port) -> Result<Vec<u8>, Error> {
+fn read_to_stars(port: &mut Port) -> Vec<u8> {
     let mut out = Vec::new();
     let searcher = TwoWaySearcher::new("***".as_bytes());
-    for vahtikoira in 0..100 {
+    for _vahtikoira in 0..100 {
         let mut serial_buf = [0u8; 256];
         if port.read(&mut serial_buf).is_err() {
             continue;
         };
         if let Some(pos) = searcher.search_in(&serial_buf) {
-            out.extend_from_slice(&serial_buf.split_at(pos).0.to_owned());
+            out.extend_from_slice(serial_buf.split_at(pos).0);
             break;
         } else {
             out.extend_from_slice(&serial_buf);
         }
     }
 
-    Ok(out)
+    out
 }
 
 fn read_len(port: &mut Port, len: u32) -> Vec<u8> {
@@ -78,10 +77,3 @@ fn read_len(port: &mut Port, len: u32) -> Vec<u8> {
     out
 }
 
-#[derive(Debug)]
-enum Error {
-    ClearFailed,
-    FlushFailed,
-    NoDataToRead,
-    WriteFailed,
-}

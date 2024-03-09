@@ -21,7 +21,7 @@ pub fn erase(port: &mut Port, addr: u32, pages: Option<u32>) {
         "Impossible to erase {page_count} pages. Maximum {max_pages}"
     );
 
-    let loader_res = communicate(port, &cmd("loader"));
+    let _loader_res = communicate(port, &cmd("loader"));
     let buf_size_str = communicate(port, &cmd("bufsize"));
     //how did you even come up with this? You had a nice map!
     let buf_size_words = buf_size_str
@@ -31,7 +31,7 @@ pub fn erase(port: &mut Port, addr: u32, pages: Option<u32>) {
         .unwrap()
         .parse()
         .unwrap();
-    let buf_size_bytes = buf_size_words * 4;
+    let _buf_size_bytes = buf_size_words * 4;
 
     println!("Erasing...");
     let _ = communicate(port, &cmd(&format!("erase {addr} {page_count}")));
@@ -48,7 +48,7 @@ pub fn read_crc(port: &mut Port, addr: u32, len: Option<u32>) -> u32 {
     };
     let payload_words = len.div_ceil(4);
     let crc_str = communicate(port, &cmd(&format!("crc {} {}", addr, payload_words)));
-    let mut crc_str = String::from_utf8(
+    let crc_str = String::from_utf8(
         crc_str
             .strip_prefix(b"Crc32 = 0x")
             .expect("Failed to get CRC")
@@ -68,8 +68,7 @@ pub fn read_c(port: &mut Port, addr: u32, len: Option<u32>) -> Vec<u8> {
     };
     let payload_words = len.div_ceil(4);
     println!("Reading {payload_words} words from address 0x{:08x}", addr);
-    let buffer = read_data(port, addr, payload_words);
-    buffer
+    read_data(port, addr, payload_words)
 }
 
 pub fn write_c(port: &mut Port, mut data: Vec<u8>, addr: u32, len: Option<u32>) {
@@ -91,7 +90,7 @@ pub fn write_c(port: &mut Port, mut data: Vec<u8>, addr: u32, len: Option<u32>) 
     let page_size: u32 = info.get("PageSize").unwrap().parse().unwrap();
     let page_count = len.div_ceil(page_size);
 
-    let loader_res = communicate(port, &cmd("loader"));
+    let _loader_res = communicate(port, &cmd("loader"));
     let buf_size_str = communicate(port, &cmd("bufsize"));
     //how did you even come up with this? You had a nice map!
     let buf_size_words = buf_size_str
@@ -102,7 +101,7 @@ pub fn write_c(port: &mut Port, mut data: Vec<u8>, addr: u32, len: Option<u32>) 
         .parse()
         .unwrap();
     let buf_size_bytes = buf_size_words * 4;
-    let parts_count = len.div_ceil(buf_size_bytes);
+    let _parts_count = len.div_ceil(buf_size_bytes);
 
     println!("Erasing...");
     let _ = communicate(port, &cmd(&format!("erase {addr} {page_count}")));

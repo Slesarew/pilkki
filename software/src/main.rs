@@ -2,12 +2,12 @@ mod command;
 use command::{cmd, connect, erase, read_c, read_crc, simple_command, write_c};
 
 mod ecc;
-use ecc::calculate_crc;
+
 
 mod serial;
-use serial::{communicate, connect_port};
+use serial::{connect_port};
 
-use clap::{arg, command, value_parser, ArgAction, Command};
+use clap::{arg, command, Command};
 
 fn main() {
     let matches = command!()
@@ -71,19 +71,18 @@ fn main() {
         }
 
         Some(("crc", sub_matches)) => {
-            let addr = if let Some(ref a) = sub_matches.get_one::<String>("addr") {
+            let addr = if let Some(a) = sub_matches.get_one::<String>("addr") {
                 a.parse().unwrap()
             } else {
                 0x08000000
             };
-            let mut len_text = String::new();
-            let len = if let Some(a) = sub_matches.get_one::<String>("length") {
+            let (len_text, len) = if let Some(a) = sub_matches.get_one::<String>("length") {
                 let value = a.parse().unwrap();
-                len_text = format!("CRC of {} bytes", value);
-                Some(value)
+                let len_text = format!("CRC of {} bytes", value);
+                (len_text, Some(value))
             } else {
-                len_text = "CRC of available memory".to_string();
-                None
+                let len_text = "CRC of available memory".to_string();
+                (len_text, None)
             };
             println!(
                 "{} starting from 0x{:08X} is 0x{:08X}",
@@ -94,7 +93,7 @@ fn main() {
         }
 
         Some(("erase", sub_matches)) => {
-            let addr = if let Some(ref a) = sub_matches.get_one::<String>("addr") {
+            let addr = if let Some(a) = sub_matches.get_one::<String>("addr") {
                 a.parse().unwrap()
             } else {
                 0x08000000
@@ -121,16 +120,12 @@ fn main() {
         }
 
         Some(("read", sub_matches)) => {
-            let addr = if let Some(ref a) = sub_matches.get_one::<String>("addr") {
+            let addr = if let Some(a) = sub_matches.get_one::<String>("addr") {
                 a.parse().unwrap()
             } else {
                 0x08000000
             };
-            let len = if let Some(a) = sub_matches.get_one::<String>("length") {
-                Some(a.parse().unwrap())
-            } else {
-                None
-            };
+            let len = sub_matches.get_one::<String>("length").map(|a| a.parse().unwrap());
             let filename = if let Some(a) = sub_matches.get_one::<String>("output") {
                 a
             } else {
@@ -156,16 +151,12 @@ fn main() {
         }
 
         Some(("write", sub_matches)) => {
-            let addr = if let Some(ref a) = sub_matches.get_one::<String>("addr") {
+            let addr = if let Some(a) = sub_matches.get_one::<String>("addr") {
                 a.parse().unwrap()
             } else {
                 0x08000000
             };
-            let len = if let Some(a) = sub_matches.get_one::<String>("length") {
-                Some(a.parse().unwrap())
-            } else {
-                None
-            };
+            let len = sub_matches.get_one::<String>("length").map(|a| a.parse().unwrap());
             let filename = if let Some(a) = sub_matches.get_one::<String>("input") {
                 a
             } else {
