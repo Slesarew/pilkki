@@ -3,9 +3,8 @@ use command::{cmd, connect, erase, read_c, read_crc, simple_command, write_c};
 
 mod ecc;
 
-
 mod serial;
-use serial::{connect_port};
+use serial::connect_port;
 
 use clap::{arg, command, Command};
 
@@ -125,7 +124,9 @@ fn main() {
             } else {
                 0x08000000
             };
-            let len = sub_matches.get_one::<String>("length").map(|a| a.parse().unwrap());
+            let len = sub_matches
+                .get_one::<String>("length")
+                .map(|a| a.parse().unwrap());
             let filename = if let Some(a) = sub_matches.get_one::<String>("output") {
                 a
             } else {
@@ -156,7 +157,9 @@ fn main() {
             } else {
                 0x08000000
             };
-            let len = sub_matches.get_one::<String>("length").map(|a| a.parse().unwrap());
+            let len = sub_matches
+                .get_one::<String>("length")
+                .map(|a| a.parse().unwrap());
             let filename = if let Some(a) = sub_matches.get_one::<String>("input") {
                 a
             } else {

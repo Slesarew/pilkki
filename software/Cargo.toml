@@ -10,5 +10,8 @@ clap = { version = "4.5.1", features = ["cargo"] }
 crc = "3.0.1"
 hex = "0.4.3"
 memmem = "0.1.1"
-serialport = "4.3.0"
+serialport = { version = "4.3.0", default-features = false }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+serialport = {version = "4.3.0", features = ["libudev"]}
 

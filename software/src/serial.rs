@@ -1,6 +1,6 @@
 use crate::ecc::calculate_crc;
 use memmem::{Searcher, TwoWaySearcher};
-use serialport::{SerialPort};
+use serialport::SerialPort;
 use std::{io::Read, time::Duration};
 
 pub type Port = Box<dyn SerialPort>;
@@ -76,4 +76,3 @@ fn read_len(port: &mut Port, len: u32) -> Vec<u8> {
     }
     out
 }
-
