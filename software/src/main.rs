@@ -58,7 +58,7 @@ fn main() {
 
         .get_matches();
 
-    println!("{:?}", matches);
+    //println!("{:?}", matches);
     let port_name = matches.get_one::<String>("port");
 
     let mut port = connect_port(port_name).unwrap();
