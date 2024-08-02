@@ -9,15 +9,12 @@ set(
   ${CMAKE_MODULE_PATH}
 )
 
-
-
 find_package(ArmToolchain REQUIRED)
 find_package(MCU  REQUIRED)
-include(ExternalProject)
 
 add_custom_target(
   mrproper
-  COMMAND ${CMAKE_COMMAND} --build . --target clean
+  COMMAND ${CMAKE_COMMAND} --build ${CMAKE_CURRENT_BINARY_DIR} --target clean
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   COMMENT "Cleaning build outputs..."
 )
@@ -35,5 +32,3 @@ add_subdirectory(drivers)
 add_subdirectory(app)
 add_subdirectory(common)
 add_subdirectory(targets)
-
-

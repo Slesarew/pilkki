@@ -3,6 +3,7 @@ add_executable(
     target-efm32pg23
     flashloader.c
     startup_efm32pg23.c
+    AT25.c
 )
 
 target_link_libraries(

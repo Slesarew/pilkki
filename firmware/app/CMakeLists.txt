@@ -1,7 +1,4 @@
 
-
-
-
 add_executable(
     pilkki-firmware
 
@@ -28,7 +25,6 @@ add_executable(
     use_flashloader.c
     utils.c
 
-    # fake_payload.c
     payload_bindings.c
 
     startup_stm32g431kbux.S

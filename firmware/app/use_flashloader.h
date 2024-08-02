@@ -45,7 +45,10 @@ bool uploadImageToFlashloader(uint32_t writeAddress, uint32_t *fwImage, uint32_t
 bool flashWithFlashloader(bool verify);
 bool waitForFlashloader(void);
 bool sendErasePageCmd(uint32_t addr, uint32_t size);
-bool LoadLoader(void);
+bool LoadLoader();
 void verifyFlashloaderReady(void);
+uint32_t getSpiFlashSize();
+bool sendSpiFlashErasePageCmd(uint32_t addr);
+bool ReadSpiFlashSize(uint32_t StartAddr, uint8_t * ReadBuffer);
 
 #endif
