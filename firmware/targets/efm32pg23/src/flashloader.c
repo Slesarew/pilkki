@@ -420,10 +420,48 @@ void main(void)
 		
 		else 
 
+		/* Write command */
+		if (state.debuggerStatus == DEBUGGERCMD_EFLASH_WRITE_DATA1 || state.debuggerStatus == DEBUGGERCMD_EFLASH_WRITE_DATA2)
+		{
+			/* Select buffer based on write command */
+			uint8_t useBuffer1 = state.debuggerStatus == DEBUGGERCMD_EFLASH_WRITE_DATA1 ? 1 : 0;
+			
+			/* Clear the flag to indicate that we are busy */
+			state.flashLoaderStatus = FLASHLOADER_STATUS_NOT_READY;
+			state.debuggerStatus = DEBUGGERCMD_NONE;
+
+			/* Set up buffer, size and destination */
+			
+			uint8_t *pBuff = useBuffer1 ? (uint8_t*)flashBuffer1 : (uint8_t*)flashBuffer2;
+			uint32_t StartAddress = useBuffer1 ? state.writeAddress1 : state.writeAddress2;
+			uint32_t ReadSize = useBuffer1 ? state.numBytes1 : state.numBytes2;
+
+			if (!SpiFlashFound) SpiFlashInit();
+			
+			if (SpiFlashFound)
+			{
+			    while (SpiFlashReadStatus() & SPI_STATUS_BSY) ; //wait for ready
+				/* Erase all pages in the given range */
+				for (addr = StartAddress; addr < StartAddress + ReadSize; addr += SPIPageSize)
+				{
+					SpiFlashCmd(SPICMD_WREN);
+					SpiFlashWritePage(pBuff, addr);
+					while (SpiFlashReadStatus() & SPI_STATUS_BSY) ; //wait for ready
+					pBuff += SPIPageSize;
+				}
+			}
+
+			/* Operation complete. Set flag to ready again. */
+			state.flashLoaderStatus = FLASHLOADER_STATUS_READY;
+		}
+		else
+
 			//read data
 			
-		if (state.debuggerStatus == DEBUGGERCMD_EFLASH_READ_DATA)
+		if (state.debuggerStatus == DEBUGGERCMD_EFLASH_READ_DATA1 || state.debuggerStatus == DEBUGGERCMD_EFLASH_READ_DATA2)
 		{
+			/* Select buffer based on read command */
+			uint8_t useBuffer1 = state.debuggerStatus == DEBUGGERCMD_EFLASH_READ_DATA1 ? 1 : 0;
 			/* Clear the flag to indicate that we are busy */
 			state.flashLoaderStatus = FLASHLOADER_STATUS_NOT_READY;
 			state.debuggerStatus = DEBUGGERCMD_NONE;
@@ -432,7 +470,19 @@ void main(void)
 			
 			if (SpiFlashFound)
 			{
-				SpiFlashReadPage((uint8_t*)flashBuffer1, state.writeAddress1);
+
+				uint8_t *pBuff = useBuffer1 ? (uint8_t*)flashBuffer1 : (uint8_t*)flashBuffer2;
+				uint32_t StartAddress = useBuffer1 ? state.writeAddress1 : state.writeAddress2;
+				uint32_t ReadSize = useBuffer1 ? state.numBytes1 : state.numBytes2;
+
+				while (SpiFlashReadStatus() & SPI_STATUS_BSY) ; //wait for ready
+				/* read all pages in the given range */
+				for (addr = StartAddress; addr < StartAddress + ReadSize; addr += SPIPageSize)
+				{
+					SpiFlashReadPage(pBuff, addr);
+					pBuff += SPIPageSize;
+				}
+				
 			}
 			
 			/* Operation complete. Set flag to ready again. */
@@ -453,9 +503,29 @@ void main(void)
 			
 			if (SpiFlashFound)
 			{
-				while (SpiFlashReadStatus() & SPI_STATUS_BSY) ; //wait for ready 
-				SpiFlashCmd(SPICMD_WREN);
-				SpiFlashErasePage(state.writeAddress1);
+				uint8_t *pBuff;
+			    while (SpiFlashReadStatus() & SPI_STATUS_BSY) ; //wait for ready
+				/* Erase all pages in the given range */
+				for (addr = state.writeAddress1; addr < state.writeAddress1 + state.numBytes1; addr += SPIPageSize)
+				{
+					//check if page is empty already
+					pBuff = (uint8_t*)flashBuffer1;
+					SpiFlashReadPage(pBuff, addr);
+					bool empty = true;
+					int len = SPIPageSize;
+					do {
+						if (*pBuff++ != 0xFF) {
+							empty = false;
+						}
+						len--;
+					} while (len && empty);
+
+					if (!empty) {
+						SpiFlashCmd(SPICMD_WREN);
+						SpiFlashErasePage(addr);
+						while (SpiFlashReadStatus() & SPI_STATUS_BSY) ; //wait for ready
+					}
+				}
 			}
 			
 			/* Operation complete. Set flag to ready again. */

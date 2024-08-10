@@ -178,7 +178,7 @@
 #define DEBUG_EVENT_TIMEOUT 200
 
 /* Number of times to wait for flashloader */
-#define FLASHLOADER_RETRY_COUNT 1000
+#define FLASHLOADER_RETRY_COUNT 2000
    
 /* Number of times to wait for MSC operation to complete */
 #define MSC_TIMEOUT 100

@@ -61,8 +61,7 @@ bool LoadLoader()
     uploadFlashloader((uint32_t *)payload, (uint32_t)payload_size);
 	if (ErrorFlag != SWD_ERROR_OK) return false;
 	
-	waitForFlashloader();
-	if (ErrorFlag != SWD_ERROR_OK) return false;
+	if (!waitForFlashloader()) return false;
 	
 	verifyFlashloaderReady();
 	if (ErrorFlag != SWD_ERROR_OK) return false;
@@ -245,105 +244,14 @@ bool waitForFlashloader(void)
 	return true;
 }
 
-
-
 /**********************************************************
- * Get SPI Flash size 
- * Check if SPI flash is available at all
+ * Get Buffer size in bytes
  **********************************************************/
-uint32_t getSpiFlashSize()
+uint32_t getBufferSize()
 {
-	writeMem((uint32_t)&(flState->numBytes1), 0); //reset size
-	if (ErrorFlag != SWD_ERROR_OK) return false;
-	writeMem((uint32_t)&(flState->debuggerStatus), DEBUGGERCMD_EFLASH_INIT_GET_ID);
-	if (ErrorFlag != SWD_ERROR_OK) return false;
-	waitForFlashloader();
-	if (ErrorFlag != SWD_ERROR_OK) return 0;
-	
-	
-	return readMem((uint32_t)&(flState->numBytes1));
+	return readMem((uint32_t)&(flState->bufferSize));
 }
 
-
-/**********************************************************
- * Read SPI Flash data
- **********************************************************/
-bool ReadSpiFlashSize(uint32_t StartAddr, uint8_t * ReadBuffer)
-{
-	uint32_t tmp;
-	uint8_t *p = ReadBuffer;
-	
-	writeMem((uint32_t)&(flState->numBytes1), 0); //reset size
-	if (ErrorFlag != SWD_ERROR_OK) return false;
-
-	writeMem((uint32_t)&(flState->writeAddress1), StartAddr); 
-	if (ErrorFlag != SWD_ERROR_OK) return false;
-	
-	writeMem((uint32_t)&(flState->debuggerStatus), DEBUGGERCMD_EFLASH_READ_DATA);
-	if (ErrorFlag != SWD_ERROR_OK) return false;
-	waitForFlashloader();
-	if (ErrorFlag != SWD_ERROR_OK) return false;
-	
-	if (readMem((uint32_t)&(flState->numBytes1)) == 0) return false;
-	
-	uint32_t bufferLocation1 = readMem((uint32_t)&(flState->bufferAddress1));
-
-	
-
-	for (uint8_t i = 0; i < 64; i++)
-	{
-		tmp = readMem(bufferLocation1 + i);
-		
-		*p++ = tmp & 0xff;
-		tmp >>= 8;
-		*p++ = tmp & 0xff;
-		tmp >>= 8;
-		*p++ = tmp & 0xff;
-		tmp >>= 8;
-		*p++ = tmp & 0xff;
-	}
-	return true;
-}
-
-
-
-/**********************************************************
- * Tells the flashloader to erase one page at the 
- * given address in SPI Flash
- **********************************************************/
-bool sendSpiFlashErasePageCmd(uint32_t addr)
-{
-
-	writeMem((uint32_t)&(flState->numBytes1), 0); //reset size
-	
-	writeMem((uint32_t)&(flState->writeAddress1), addr);
-	if (ErrorFlag != SWD_ERROR_OK) return false;
-
-	writeMem((uint32_t)&(flState->debuggerStatus), DEBUGGERCMD_EFLASH_ERASE_PAGE);
-	if (ErrorFlag != SWD_ERROR_OK) return false;
-	waitForFlashloader();
-	if (ErrorFlag != SWD_ERROR_OK) return false;
-	
-	if (readMem((uint32_t)&(flState->numBytes1)) == 0) return false;
-	return true;
-}
-
-/**********************************************************
- * Tells the flashloader to erase one page at the 
- * given address.
- **********************************************************/
-bool sendErasePageCmd(uint32_t addr, uint32_t size)
-{
-	writeMem((uint32_t)&(flState->writeAddress1), addr);
-	if (ErrorFlag != SWD_ERROR_OK) return false;
-	writeMem((uint32_t)&(flState->numBytes1), size);
-	if (ErrorFlag != SWD_ERROR_OK) return false;
-	writeMem((uint32_t)&(flState->debuggerStatus), DEBUGGERCMD_ERASE_PAGE);
-	if (ErrorFlag != SWD_ERROR_OK) return false;
-	waitForFlashloader();
-	if (ErrorFlag != SWD_ERROR_OK) return false;
-	return true;
-}
 
 /**********************************************************
  * Writes a chunk of data to a buffer in the flashloader.
@@ -400,6 +308,172 @@ bool writeToFlashloaderBuffer(uint32_t remoteAddr, uint32_t *localBuffer, int nu
 	return true;
 	
 }
+
+/**********************************************************
+ * Get SPI Flash size 
+ * Check if SPI flash is available at all
+ **********************************************************/
+uint32_t getSpiFlashSize()
+{
+	writeMem((uint32_t)&(flState->numBytes1), 0); //reset size
+	if (ErrorFlag != SWD_ERROR_OK) return false;
+	writeMem((uint32_t)&(flState->debuggerStatus), DEBUGGERCMD_EFLASH_INIT_GET_ID);
+	if (ErrorFlag != SWD_ERROR_OK) return false;
+	if (!waitForFlashloader()) return false;
+	
+	
+	return readMem((uint32_t)&(flState->numBytes1)) * 1024;
+}
+
+
+/**********************************************************
+ * Uploads a binary image to the SPi flash.
+ **********************************************************/
+bool uploadImageToloaderSpiFlash(uint32_t writeAddress, uint32_t *fwImage, uint32_t size)
+{   
+	uint32_t numPages = size / SPIPageSize;
+	uint32_t curPage = 0;
+//	if (writeAddress < FLASH_MEM_BASE) 
+//	{
+//		return false;
+//	}
+	bool useBuffer1 = true;
+  
+	/* Get the buffer location (where to temporary store data 
+	 * in target SRAM) from flashloader */
+	uint32_t bufferLocation1 = readMem((uint32_t)&(flState->bufferAddress1));
+	if (ErrorFlag != SWD_ERROR_OK) return false;
+	uint32_t bufferLocation2 = readMem((uint32_t)&(flState->bufferAddress2));
+	if (ErrorFlag != SWD_ERROR_OK) return false;   
+	/* Get size of target buffer */
+	uint32_t bufferSize = readMem((uint32_t)&(flState->bufferSize));
+  
+	if (ErrorFlag != SWD_ERROR_OK) return false;
+	
+	/* Round up to nearest page */
+	if (numPages * SPIPageSize < size) numPages++;
+	
+	/* Fill the buffer in RAM and tell the flashloader to write
+	 * this buffer to SPI Flash. Since we are using two buffers
+	 * we can fill one buffer while the flashloader is using
+	 * the other. 
+	 */  
+	while (curPage < numPages) 
+	{
+		/* Calculate the number of words to write */
+		int pagesToWrite = numPages - curPage < bufferSize / SPIPageSize ? numPages - curPage : bufferSize / SPIPageSize;
+		        
+		/* Write one chunk to the currently active buffer */
+		writeToFlashloaderBuffer(
+		       useBuffer1 ? bufferLocation1 : bufferLocation2,
+			&fwImage[curPage * SPIPageSize / 4],
+			pagesToWrite * SPIPageSize / 4);
+		
+		if (ErrorFlag != SWD_ERROR_OK) return false;    
+		
+		/* Wait until flashloader is done writing to flash */
+		if (!waitForFlashloader()) return false;
+
+		
+		/* Tell the flashloader to write the data to flash */
+		if (useBuffer1) 
+		{      
+			writeMem((uint32_t)&(flState->numBytes1), pagesToWrite * SPIPageSize);
+			writeMem((uint32_t)&(flState->writeAddress1), writeAddress);
+			writeMem((uint32_t)&(flState->debuggerStatus), DEBUGGERCMD_EFLASH_WRITE_DATA1);
+		} 
+		else
+		{
+			writeMem((uint32_t)&(flState->numBytes2), pagesToWrite * SPIPageSize);
+			writeMem((uint32_t)&(flState->writeAddress2), writeAddress);
+			writeMem((uint32_t)&(flState->debuggerStatus), DEBUGGERCMD_EFLASH_WRITE_DATA2);      
+		}
+		if (ErrorFlag != SWD_ERROR_OK) return false;
+		/* Increase address */
+		curPage += pagesToWrite;
+		writeAddress += pagesToWrite * SPIPageSize;
+    
+		/* Flip buffers */
+		useBuffer1 = !useBuffer1;
+	}
+  
+	/* Wait until the last flash write operation has completed */
+	if (!waitForFlashloader()) return false;
+	return true;
+}
+
+/**********************************************************
+ * Read SPI Flash data
+ **********************************************************/
+bool sendSpiFlashReadCmd(bool useBuffer1, uint32_t addr, uint32_t size)
+{
+	if (useBuffer1) 
+	{      
+		writeMem((uint32_t)&(flState->numBytes1), size);
+		writeMem((uint32_t)&(flState->writeAddress1), addr);
+		writeMem((uint32_t)&(flState->debuggerStatus), DEBUGGERCMD_EFLASH_READ_DATA1);
+	} 
+	else
+	{
+		writeMem((uint32_t)&(flState->numBytes2), size);
+		writeMem((uint32_t)&(flState->writeAddress2), addr);
+		writeMem((uint32_t)&(flState->debuggerStatus), DEBUGGERCMD_EFLASH_READ_DATA2);      
+	}
+	if (ErrorFlag != SWD_ERROR_OK) return false;
+
+	return true;
+}
+
+bool getSpiFlashReadBufferLocation(bool useBuffer1, uint32_t *BufferLocation)
+{
+	if (!waitForFlashloader()) return false;
+	if (useBuffer1) {
+		*BufferLocation = readMem((uint32_t)&(flState->bufferAddress1));
+	} else {
+		*BufferLocation = readMem((uint32_t)&(flState->bufferAddress2));
+	}
+	if (ErrorFlag != SWD_ERROR_OK) return false;
+
+	return true;
+}
+
+/**********************************************************
+ * Tells the flashloader to erase one page at the 
+ * given address in SPI Flash
+ **********************************************************/
+bool sendSpiFlashErasePageCmd(uint32_t addr, uint32_t size)
+{
+
+	writeMem((uint32_t)&(flState->writeAddress1), addr);
+	if (ErrorFlag != SWD_ERROR_OK) return false;
+
+	writeMem((uint32_t)&(flState->numBytes1), size);
+	if (ErrorFlag != SWD_ERROR_OK) return false;
+
+	writeMem((uint32_t)&(flState->debuggerStatus), DEBUGGERCMD_EFLASH_ERASE_PAGE);
+	if (ErrorFlag != SWD_ERROR_OK) return false;
+	if (!waitForFlashloader()) return false;
+	
+	if (readMem((uint32_t)&(flState->numBytes1)) == 0) return false;
+	return true;
+}
+
+/**********************************************************
+ * Tells the flashloader to erase one page at the 
+ * given address.
+ **********************************************************/
+bool sendErasePageCmd(uint32_t addr, uint32_t size)
+{
+	writeMem((uint32_t)&(flState->writeAddress1), addr);
+	if (ErrorFlag != SWD_ERROR_OK) return false;
+	writeMem((uint32_t)&(flState->numBytes1), size);
+	if (ErrorFlag != SWD_ERROR_OK) return false;
+	writeMem((uint32_t)&(flState->debuggerStatus), DEBUGGERCMD_ERASE_PAGE);
+	if (ErrorFlag != SWD_ERROR_OK) return false;
+	if (!waitForFlashloader()) return false;
+	return true;
+}
+
 
 
 
@@ -462,8 +536,7 @@ bool uploadImageToFlashloader(uint32_t writeAddress, uint32_t *fwImage, uint32_t
 		if (ErrorFlag != SWD_ERROR_OK) return false;    
 		
 		/* Wait until flashloader is done writing to flash */
-		waitForFlashloader();
-		if (ErrorFlag != SWD_ERROR_OK) return false;
+		if (!waitForFlashloader()) return false;
 
 		
 		/* Tell the flashloader to write the data to flash */
@@ -489,8 +562,7 @@ bool uploadImageToFlashloader(uint32_t writeAddress, uint32_t *fwImage, uint32_t
 	}
   
 	/* Wait until the last flash write operation has completed */
-	waitForFlashloader();
-	if (ErrorFlag != SWD_ERROR_OK) return false;
+	if (!waitForFlashloader()) return false;
 	return true;
 }
 

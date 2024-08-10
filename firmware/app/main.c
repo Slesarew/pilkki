@@ -40,6 +40,7 @@
 #include "utils.h"
 #include "flash_write.h"
 #include "use_flashloader.h"
+#include "flashloader.h"
 
 #include "efm32.h"
 
@@ -62,7 +63,7 @@
 //#define SPI1_DR_8bit (*(__IO uint8_t *)((uint32_t)&(SPI1->DR)))
 //#define SPI1_DR_16bit (*(__IO uint16_t *)((uint32_t)&(SPI1->DR)))
 
-#define FIRMWARE_REVISION 20
+#define FIRMWARE_REVISION 21
 
 #define USB_FIFO_RX 1024
 /* USER CODE END PD */
@@ -98,6 +99,7 @@ uint32_t UsbSubBuf[128]; // __attribute__((section(".ram2")));
 
 uint32_t Unique_ID_0;
 
+uint32_t WriteBuffSize = WRITE_BUFFER * 4;
 uint32_t PageSize;
 uint32_t FlashSize;
 uint32_t RamSize;
@@ -355,7 +357,7 @@ int main(void)
 	
 	HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
 	HAL_ADC_Start_DMA(&hadc1, (uint32_t*)&AdcRaw, 1);
-	uPrintf("\r\nReady\r\n");
+
 	usb.CmdSize = 0;
 	usb.CMD = true;
 
@@ -394,11 +396,11 @@ int main(void)
 					
 					usb.CmdIn[usb.CmdSize] = 0;
 					usb.CmdSize = 0;
-						
-					//parsing requests
-						
-					
-					
+
+					//parsing requests					
+
+
+
 					if (strstr(usb.CmdIn, "bootloader"))
 					{
 						uPrintf("Starting Bootloader\r\n***\r\n");
@@ -406,7 +408,7 @@ int main(void)
 						StartBoot();
 					}
 					else 
-					
+						//no need in rust pilkki software
 						//get maximum rx buffer in 32 bit words
 					if (strstr(usb.CmdIn, "bufsize"))
 					{
@@ -449,12 +451,10 @@ int main(void)
 								LEDR(1);
 								continue;
 							}
-							//getSpiFlashSize
 								
 							uPrintf("PageSize %u\r\n", PageSize);
 							uPrintf("FlashSize %u\r\n", FlashSize);
-							uPrintf("RamSize %u\r\n***\r\n", RamSize);//eflash size
-								
+							uPrintf("RamSize %u\r\n***\r\n", RamSize);
 						}
 					}
 					else 
@@ -462,7 +462,18 @@ int main(void)
 					if (strstr(usb.CmdIn, "loader"))
 					{
 							
-						if (LoadLoader()) uPrintf("Loader OK\r\n***\r\n");
+						if (LoadLoader()) {
+							uPrintf("Loader OK\r\n");
+							uint32_t SpiFlashSize = getSpiFlashSize();
+
+							if (SpiFlashSize)
+							{
+								uPrintf("SPIFlashSize %u\r\n", SpiFlashSize);
+							}
+							uPrintf("MaxBufSize %lu\r\n", WriteBuffSize);
+							uPrintf("***\r\n");
+						}
+						
 						else 
 						{
 							uPrintf("Loader error\r\n***\r\n");
@@ -507,47 +518,35 @@ int main(void)
 						char * pEnd = strstr(usb.CmdIn, " ");
 						uint32_t StartAddr, Size, Wrd;
 						if (strstr(pEnd, "0x")) StartAddr = strtol(pEnd, &pEnd, 16);	
-						else StartAddr = strtol(pEnd, &pEnd, 10);	
-							
-						//if (strstr(pEnd, "0x")) Size = strtol(pEnd, &pEnd, 16);
-						//else Size = strtol(pEnd, &pEnd, 10);
-							
-						//if (Size == 0 || Size > (FlashSize / PageSize)) 
-						//{
-						//	uPrintf("Wrong request\r\n***\r\n");
-						//	LEDR(1);
-						//}
-						//else
-						//{
-						uPrintf("Erasing SPI Flash with Loader, Start: 0x%08lX\r\n", StartAddr);	
+						else StartAddr = strtol(pEnd, &pEnd, 10);
 
-						if (!sendSpiFlashErasePageCmd(StartAddr)) //, Size * PageSize
-						{
-							uPrintf("Erase error\r\n***\r\n");
-							LEDR(1);
-						}
-						else uPrintf("Erase Done\r\n***\r\n");
-
-						//}
-							
-					}
-					else 
-						//Get SPI Flash Size
-					if (strstr(usb.CmdIn, "spisize"))
-					{
+						if (strstr(pEnd, "0x")) Size = strtol(pEnd, &pEnd, 16);
+						else Size = strtol(pEnd, &pEnd, 10);	
+						
 						uint32_t SpiFlashSize = getSpiFlashSize();
-
-						if (!SpiFlashSize)
+						StartAddr = StartAddr - StartAddr % SPIPageSize;
+						uint32_t SpiFlashLeftSize = (SpiFlashSize / SPIPageSize) - StartAddr / SPIPageSize;
+						if (Size == 0 || Size > SpiFlashLeftSize)
 						{
-							uPrintf("SPI Flash ERR\r\n***\r\n");
+							uPrintf("Wrong request\r\n***\r\n");
 							LEDR(1);
 						}
-
+						else
+						if (Size > 256)
+						{
+							uPrintf("Wrong request. Will be timed out, no more 256 pages\r\n***\r\n");
+							LEDR(1);
+						}
 						else
 						{
-							uPrintf("SPI Flash Size is %u KBytes\r\n***\r\n", SpiFlashSize);	
-						}
+							if (!sendSpiFlashErasePageCmd(StartAddr, Size * SPIPageSize))
+							{
+								uPrintf("SPI Flash Erase error while erasing %u pages at 0x%08lX\r\n***\r\n", Size, StartAddr);
+								LEDR(1);
+							}
 							
+							else uPrintf("Erased %u pages at 0x%08lX***\r\n", Size ,  StartAddr);
+						}
 					}
 					else 
 					
@@ -559,38 +558,141 @@ int main(void)
 						if (strstr(pEnd, "0x")) StartAddr = strtol(pEnd, &pEnd, 16);	
 						else StartAddr = strtol(pEnd, &pEnd, 10);	
 						
-		
-						uint32_t tarWrap =  getTarWrap();
-						
-						if (ErrorFlag != 1 && !ReadSpiFlashSize(StartAddr, SpiRead))
+						if (strstr(pEnd, "0x")) Size = strtol(pEnd, &pEnd, 16);
+						else Size = strtol(pEnd, &pEnd, 10);
+
+						uint32_t SpiFlashSize = getSpiFlashSize();
+						StartAddr = StartAddr - StartAddr % SPIPageSize;
+						uint32_t SpiFlashLeftSize = (SpiFlashSize / SPIPageSize) - StartAddr / SPIPageSize;
+						if (Size == 0 || Size > SpiFlashLeftSize)
 						{
-							uPrintf("Read error\r\n***\r\n");
+							uPrintf("Wrong request\r\n***\r\n");
 							LEDR(1);
 						}
-						else 
-						{						
-							
-							uPrintf("%u\r\n", tarWrap);
-							
-							__HAL_CRC_DR_RESET(&hcrc);	
-							uPrintf("Reading SPI Flash memory, Start: 0x%08lX\r\n", StartAddr);	
-							
-							for (uint8_t i = 0; i < 16; i++)
+						else
+						{
+							bool useBuffer1 = true;
+							uint32_t bufferPages = getBufferSize() / SPIPageSize;
+							int pagesToRead = Size < bufferPages ? Size : bufferPages;
+							if (!sendSpiFlashReadCmd(useBuffer1, StartAddr, pagesToRead * SPIPageSize) && ErrorFlag != 1)
 							{
-								for (uint8_t j = 0; j < 16; j++)
-								{
-									uPrintf("%02X ", SpiRead[i * 16 + j]);
-								}
-								uPrintf("\r\n");
-								
+								uPrintf("Read error\r\n***\r\n");
+								LEDR(1);
 							}
-							uPrintf("Read Done\r\n***\r\n");
+							else 
+							{
+
+								uint32_t tarWrap =  getTarWrap();
+								__HAL_CRC_DR_RESET(&hcrc);
+
+								uint32_t buffer_location;
+								uint32_t curPage = 0;
+
+								while (curPage < Size) {
+									/* Calculate the number of words to read and send*/
+									int pagesToSend = Size - curPage < bufferPages ? Size - curPage : bufferPages;
+									int pagesToRead = Size - (curPage + pagesToSend) < bufferPages ? Size - (curPage + pagesToSend) : bufferPages;
+									curPage += pagesToSend;
+									getSpiFlashReadBufferLocation(useBuffer1, &buffer_location);
+
+									useBuffer1 != useBuffer1;
+									if (pagesToRead) {
+										if (!sendSpiFlashReadCmd(useBuffer1, StartAddr + curPage * SPIPageSize, pagesToRead * SPIPageSize) && ErrorFlag != 1)
+										{
+											uPrintf("Read error\r\n***\r\n");
+											LEDR(1);
+											break;
+										}
+									}
+									UsbPackBufferP = 0;
+									writeAP(AP_CSW, AP_CSW_DEFAULT | AP_CSW_AUTO_INCREMENT);
+									writeAP(AP_TAR, buffer_location);
+									readAP(AP_DRW, &Wrd);
+									uint32_t wordsToSend = (pagesToSend * SPIPageSize >> 2);
+									for (uint32_t i = 0; i < wordsToSend; i++)
+									{
+										addr = buffer_location + (i << 2);
+										if ((addr & tarWrap) == 0)
+										{
+											writeAP(AP_TAR, addr);
+											readAP(AP_DRW, &Wrd);
+										}
+										readAP(AP_DRW, &Wrd);
+										CRC->DR = Wrd;
+										if (ErrorFlag != 1) 
+										{
+											uPrintf("error\r\n***\r\n");
+											LEDR(1);
+											break;
+										}
+										tickstart = HAL_GetTick();
+
+										UsbPackBuffer[UsbPackBufferP++] = Wrd;
+											
+											
+										if (UsbPackBufferP == 128 || i == wordsToSend - 1) 
+										{
+											while (UsbCheckBusy()) ;
+											memcpy(UsbSubBuf, UsbPackBuffer, UsbPackBufferP << 2);
+											while (CDC_Transmit_FS((uint8_t*)&UsbSubBuf, UsbPackBufferP << 2)) 
+												//while (CDC_Transmit_FS((uint8_t*)&Wrd, 4)) 
+											{
+												if (HAL_GetTick() - tickstart > 200) break;
+											}
+											UsbPackBufferP = 0;
+										}
+										
+									}
+								}
+								writeAP(AP_CSW, AP_CSW_DEFAULT);
+								
+								Wrd = CRC->DR ^ -1UL;
+
+								tickstart = HAL_GetTick();
+								while (CDC_Transmit_FS((uint8_t*)&Wrd, 4)) 
+								{
+									if (HAL_GetTick() - tickstart > 100) break;
+								}
+					
+								if (ErrorFlag == 1) uPrintf("Done");
+							}
 						}
-						
 					}
 					
 					else
-						
+					//	write buffer to spi flash
+					if (strstr(usb.CmdIn, "spiwritebuffer"))
+					{
+						char * pEnd = strstr(usb.CmdIn, " ");
+						static uint32_t StartAddr, Size, Wrd, addr;
+						if (strstr(pEnd, "0x")) StartAddr = strtol(pEnd, &pEnd, 16);	
+						else StartAddr = strtol(pEnd, &pEnd, 10);	
+							
+						if (strstr(pEnd, "0x")) Size = strtol(pEnd, &pEnd, 16);	
+						else Size = strtol(pEnd, &pEnd, 10);	
+							
+						uint32_t SpiFlashSize = getSpiFlashSize();
+						StartAddr = StartAddr - StartAddr % SPIPageSize;
+						uint32_t SpiFlashLeftSize = (SpiFlashSize / SPIPageSize) - StartAddr / SPIPageSize;
+						if (Size == 0 || Size > SpiFlashLeftSize)
+						{
+							uPrintf("Wrong request\r\n***\r\n");
+							LEDR(1);
+						}
+
+						uploadImageToloaderSpiFlash(StartAddr, WriteBuffer, Size * SPIPageSize);
+
+						if (ErrorFlag != 1) 
+						{
+							uPrintf("error\r\n***\r\n");
+							LEDR(1);
+						}
+						else 
+							uPrintf("Write OK\r\n***\r\n");
+						//							}
+					}
+					else
+
 						/*****************************
 						 *****************************
 						 ***    END OF SPi FLASH   ***
@@ -604,25 +706,14 @@ int main(void)
 						uint32_t StartAddr, Size, Wrd;
 						if (strstr(pEnd, "0x")) StartAddr = strtol(pEnd, &pEnd, 16);	
 						else StartAddr = strtol(pEnd, &pEnd, 10);	
-							
+						
 						if (strstr(pEnd, "0x")) Size = strtol(pEnd, &pEnd, 16);
 						else Size = strtol(pEnd, &pEnd, 10);
-							
-						if (StartAddr == 0x08000000)
-						{
-							//LEDY(1);
-							if (!sendSpiFlashErasePageCmd(StartAddr))
-							{
-								Size = 0; //to trigger error
-								LEDR(1);
-								uPrintf("SPI Flash Erase error\r\n");
-								
-							}
-						}
 
-						//LEDY(0);
-						
-						if (Size == 0 || Size > (FlashSize / PageSize)) 
+						FlashSize = getFlashSize();
+						StartAddr = StartAddr - StartAddr % PageSize;
+						uint32_t FlashLeftSize = (FlashSize / PageSize) - (StartAddr - 0x08000000) / PageSize ;
+						if (Size == 0 || Size > FlashLeftSize) 
 						{
 							uPrintf("Wrong request\r\n***\r\n");
 							LEDR(1);
@@ -656,10 +747,10 @@ int main(void)
 							
 						if (strstr(pEnd, "0x")) Size = strtol(pEnd, &pEnd, 16);
 						else Size = strtol(pEnd, &pEnd, 10);
-							
-							
-							
-						if (Size == 0)
+						
+						FlashSize = getFlashSize();
+						uint32_t FlashReqSize = FlashSize - (StartAddr - 0x08000000);
+						if (Size == 0 || Size << 2 > FlashReqSize)
 						{
 							uPrintf("Wrong request\r\n***\r\n");
 							LEDR(1);
@@ -863,7 +954,7 @@ int main(void)
 					}
 					else
 						// Write 
-					if (strstr(usb.CmdIn, "writebuffer")) //also write buffer to spi flash
+					if (strstr(usb.CmdIn, "writebuffer"))
 					{
 						char * pEnd = strstr(usb.CmdIn, " ");
 						static uint32_t StartAddr, Size, Wrd, addr;
@@ -917,7 +1008,7 @@ int main(void)
 					{
 						if (strlen(usb.CmdIn) > 1) 
 						{
-							uPrintf("Invalid request\r\n***\r\n");
+							uPrintf("Invalid request \"%s\"\r\n***\r\n", usb.CmdIn);
 							LEDR(1);
 						}
 
