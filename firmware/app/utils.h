@@ -61,5 +61,8 @@ bool verifyAhbApId(uint32_t dpId);
 int getFlashSize(void);
 uint32_t getTarWrap(void);
 void checkIfZeroGeckoIsLocked(void);
+void GPIO_WritePinOut();
+void GPIO_WritePinIn();
+
 
 #endif

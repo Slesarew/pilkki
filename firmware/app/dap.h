@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @file dap.h
- * @brief Low level SWD interface functions.
+ * @brief Low level SWD interface functions. 
  * @author Silicon Labs
  * @version 1.03
  *******************************************************************************
@@ -34,6 +34,7 @@
 #define _DAP_H_
 
 #include "main.h"
+#include "utils.h"
 /* ACK responses */
 #define ACK_OK     1
 #define ACK_WAIT   2
@@ -57,7 +58,7 @@
 #define AP_IDR 3  /* In bank 0xf */
 
 /* AAP registers */
-#define AAP_CMD    0
+#define AAP_CMD    0 
 #define AAP_CMDKEY 1
 #define AAP_STATUS 2
 #define AAP_IDR    3  /* In bank 0xf */
@@ -86,7 +87,7 @@
 /* Key which must be written to AAP_CMDKEY before
  * writing to AAP_CMD */
 #define AAP_UNLOCK_KEY 0xcfacc118
-
+   
 /* Value to write to AIRCR in order to do a soft
  * reset of the target */
 #define AIRCR_RESET_CMD 0x05FA0006
@@ -104,7 +105,7 @@
 #define DP_CTRL_CSYSPWRUPREQ  (1 << 30)
 #define DP_CTRL_CSYSPWRUPACK  (1 << 31)
 
-/* Commands to run/step and let CPU run.
+/* Commands to run/step and let CPU run. 
  * Write these to DHCSR */
 #define RUN_CMD  0xA05F0001
 #define STOP_CMD 0xA05F0003
@@ -113,7 +114,7 @@
 /* Flash addresses to retrieve the device unique id */
 #define UNIQUE_ID_HIGH_ADDR 0x0FE081F4
 #define UNIQUE_ID_LOW_ADDR  0x0FE081F0
-
+   
 
 /* AAP bit fields */
 #define AAP_CMD_DEVICEERASE 1
@@ -123,8 +124,8 @@
 
 /* Default pin configuration is provided
  * for EFM32GG-STK3700 and EFM32GG-DK3750.
- * Change these defines to select other pins.
- * Note that in order to perform the
+ * Change these defines to select other pins. 
+ * Note that in order to perform the 
  * Gecko Unlock Sequence, the pins PE8,PE9
  * MUST be used for SWCLK,SWDIO.
  */
@@ -150,20 +151,20 @@
 
 
 
-/* Number of times to retry an SWD operation when receiving
+/* Number of times to retry an SWD operation when receiving 
  * a WAIT response */
 #define SWD_RETRY_COUNT 2000
 
 /* Number of times to retry the connection sequence */
 #define CONNECT_RETRY_COUNT 3
-
+   
 /* Number of times to retry reading the AHB-IDR register when connecting */
 #define AHB_IDR_RETRY_COUNT 20
 
 /* Number of times to retry the AAP window expansion
- * sequence (with longer and longer delays) */
+ * sequence (with longer and longer delays) */   
 #define AAP_EXPANSION_RETRY_COUNT 50
-
+   
 /* Number of times to retry reading the CTLR/STAT
  * register while waiting for powerup acknowledge */
 #define PWRUP_TIMEOUT 100
@@ -171,35 +172,38 @@
 /* Number of times to retry reading the ERASEBUSY flag
  * while waiting for Mass Erase (Debug Unlock) to complete */
 #define UNLOCK_RETRY_COUNT 5
-
+   
 /* Number of times to retry reading status registers while
  * waiting for a debug event (such as a halt of soft reset) */
 #define DEBUG_EVENT_TIMEOUT 200
 
 /* Number of times to wait for flashloader */
-#define FLASHLOADER_RETRY_COUNT 1000
-
+#define FLASHLOADER_RETRY_COUNT 2000
+   
 /* Number of times to wait for MSC operation to complete */
 #define MSC_TIMEOUT 100
-
+   
 
 /* JTAG to SWD bit sequence, transmitted LSB first */
 #define JTAG2SWD 0xE79E
 
+
+
 #define SWDIO_SET_INPUT() {\
 	GPIOA->MODER &= ~GPIO_MODER_MODE7_Msk; \
-	HAL_GPIO_WritePin(SWDIR_GPIO_Port, SWDIR_Pin, 0); } //IN
+	GPIO_WritePinIn(); } //IN 
 
 #define SWDIO_SET_OUTPUT() {\
-	HAL_GPIO_WritePin(SWDIR_GPIO_Port, SWDIR_Pin, 1); \
-	GPIOA->MODER |= GPIO_MODER_MODE7_1; } //OUT
+	GPIO_WritePinOut(); \
+	GPIOA->MODER |= GPIO_MODER_MODE7_1; } //OUT	
 
-/*
+//
+//
 //#if (SWDIO_PIN < 8)
 //#define SWDIO_SET_INPUT() { \
 //    GPIO->P[SWDIO_PORT].MODEL = (GPIO->P[SWDIO_PORT].MODEL & ~(0xf << 4 * SWDIO_PIN)) | (0x1 << (4 * SWDIO_PIN)); \
 //    GPIO->P[SWDIO_PORT].DOUT &=  ~(1 << SWDIO_PIN); }
-//#else
+//#else 
 //#define SWDIO_SET_INPUT() { \
 //    GPIO->P[SWDIO_PORT].MODEH = (GPIO->P[SWDIO_PORT].MODEH & ~(0xf << 4 * (SWDIO_PIN-8))) | (0x1 << (4 * (SWDIO_PIN-8))); \
 //    GPIO->P[SWDIO_PORT].DOUT &=  ~(1 << SWDIO_PIN); }
@@ -208,11 +212,11 @@
 //#if (SWDIO_PIN < 8)
 //#define SWDIO_SET_OUTPUT() { \
 //    GPIO->P[SWDIO_PORT].MODEL = (GPIO->P[SWDIO_PORT].MODEL & ~(0xf << 4 * SWDIO_PIN)) | (0x4 << (4 * SWDIO_PIN)); \
-//    GPIO->P[SWDIO_PORT].DOUT &=  ~(1 << SWDIO_PIN); }
+//    GPIO->P[SWDIO_PORT].DOUT &=  ~(1 << SWDIO_PIN); }    
 //#else
 //#define SWDIO_SET_OUTPUT() { \
 //    GPIO->P[SWDIO_PORT].MODEH = (GPIO->P[SWDIO_PORT].MODEH & ~(0xf << 4 * (SWDIO_PIN-8))) | (0x4 << (4 * (SWDIO_PIN-8))); \
-//    GPIO->P[SWDIO_PORT].DOUT &=  ~(1 << SWDIO_PIN); }
+//    GPIO->P[SWDIO_PORT].DOUT &=  ~(1 << SWDIO_PIN); }    
 //#endif
 //
 //
@@ -220,7 +224,7 @@
 
 //DO_GPIO_Port->BSRR = GPIO_BSRR_BS5
 //DO_GPIO_Port->BSRR = GPIO_BSRR_BR5
-//
+//	
 //#define SWDIO_SET() DO_GPIO_Port->BSRR = GPIO_BSRR_BS5
 //#define SWDIO_CLR() DO_GPIO_Port->BSRR = GPIO_BSRR_BR5
 //#define SWCLK_SET() DCK_GPIO_Port->BSRR = GPIO_BSRR_BS3
@@ -250,14 +254,14 @@
 //#define sREAD_BIT(bit)   \
 //  SWCLK_CLR();          \
 //  bit = SWDIO_IN();     \
-//  SWCLK_SET()
-//
+//  SWCLK_SET()          
+//	
 //#define sWRITE_BIT(bit)  \
 //  SWDIO_OUT(bit);        \
 //  SWCLK_CLR();          \
-//  SWCLK_SET();
-//
-*/
+//  SWCLK_SET();          
+//      
+
 void JTAG_to_SWD_Sequence(void);
 void writeAP(int reg, uint32_t data);
 void writeDP(int reg, uint32_t data);

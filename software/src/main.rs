@@ -1,5 +1,8 @@
 mod command;
-use command::{cmd, connect, erase, read_c, read_crc, simple_command, write_c};
+use command::{
+    cmd, connect, erase, erase_eflash, get_buf_size, get_loader_info, read_c, read_crc,
+    read_eflash, simple_command, write_c, write_eflash, FLASH_USERDATA_ADDRESS,
+};
 
 mod ecc;
 
@@ -18,13 +21,19 @@ fn main() {
 
         .subcommand(Command::new("crc")
             .about("Calculate CRC32 checksum of memory region on the target")
-            .arg(arg!(-a --addr <ADDRESS> "Starting address on the target. [default: 0x08000000]"))
-            .arg(arg!(-l --length <LENGTH> "Length of the memory region to read (in bytes)."))
+            .arg(arg!(-a --addr <ADDRESS> "Starting address on the target. Will be alligned to words. [default: 0x08000000]"))
+            .arg(arg!(-l --length <LENGTH> "Length of the memory region to read (in bytes). Will be alligned to words."))
             )
 
         .subcommand(Command::new("erase")
             .about("Erase firmware from the target.")
-            .arg(arg!(-a --addr <ADDRESS> "Starting address on the target. [default: 0x08000000]"))
+            .arg(arg!(-a --addr <ADDRESS> "Starting address on the target. Will be aligned to pages. [default: 0x08000000]"))
+            .arg(arg!(-n --pages <PAGES> "Number of pages to erase. [default: all]"))
+            )
+
+        .subcommand(Command::new("erase-eflash")
+            .about("Erase external flash on the target.")
+            .arg(arg!(-a --addr <ADDRESS> "Starting address on the target. Will be aligned to pages. [default: 0x00000000]"))
             .arg(arg!(-n --pages <PAGES> "Number of pages to erase. [default: all]"))
             )
 
@@ -38,6 +47,13 @@ fn main() {
             .about("Read firmware from the target.")
             .arg(arg!(-a --addr <ADDRESS> "Starting address on the target. [default: 0x08000000]"))
             .arg(arg!(-o --output <FILENAME> "Output file name [default: out.bin]"))
+            .arg(arg!(-l --length <LENGTH> "Length of the memory region to read (in bytes). [default: memory_size]"))
+            )
+
+        .subcommand(Command::new("read-eflash")
+            .about("Read external flash on the target.")
+            .arg(arg!(-a --addr <ADDRESS> "Starting address on the target. [default: 0x00000000]"))
+            .arg(arg!(-o --output <FILENAME> "Output file name [default: out-eflash.bin]"))
             .arg(arg!(-l --length <LENGTH> "Length of the memory region to read (in bytes). [default: memory_size]"))
             )
 
@@ -56,6 +72,13 @@ fn main() {
             .arg(arg!(-l --length <LENGTH> "Length of the memory region to write (in bytes). [default: memory_size]"))
             )
 
+        .subcommand(Command::new("write-eflash")
+            .about("Write image to external flash on the target.")
+            .arg(arg!(-a --addr <ADDRESS> "Starting address on the target's eflash. Will be aligned to pages. [default: 0x00000000]"))
+            .arg(arg!(-i --input <FILENAME> "Input file name (required)").required(true))
+            .arg(arg!(-l --length <LENGTH> "Length of the memory region to write (in bytes). Will be aligned to pages. [default: eflash_memory_size]"))
+            )
+
         .get_matches();
 
     //println!("{:?}", matches);
@@ -63,47 +86,86 @@ fn main() {
 
     let mut port = connect_port(port_name).unwrap();
 
+    let info = match connect(&mut port) {
+        Ok(info) => info,
+        Err(message) => return println!("{}", message),
+    };
+
+    let loader_info = match matches.subcommand() {
+        Some(("read-eflash", _)) | Some(("write-eflash", _)) | Some(("erase-eflash", _)) => {
+            match get_loader_info(&mut port) {
+                Ok(loader_info) => {
+                    if loader_info.get("SPIFlashSize").is_none() {
+                        return println!("Flasher does not seem to support this command, try to update the firmware");
+                    }
+                    Some(loader_info)
+                }
+                Err(message) => {
+                    return println!("{}", message);
+                }
+            }
+        }
+        Some(("write", _)) | Some(("erase", _)) => {
+            match get_loader_info(&mut port) {
+                Ok(mut loader_info) => {
+                    if loader_info.get("MaxBufSize").is_none() {
+                        //legacy support
+                        loader_info.insert(
+                            "MaxBufSize".to_string(),
+                            get_buf_size(&mut port).to_string(),
+                        );
+                    }
+                    Some(loader_info)
+                }
+                Err(message) => {
+                    return println!("{}", message);
+                }
+            }
+        }
+        _ => None,
+    };
+
     match matches.subcommand() {
         Some(("connect", _)) => {
-            let res = connect(&mut port);
-            println!("{}", String::from_utf8(res.clone()).unwrap());
+            for (key, value) in info {
+                println!("{}: {}", key, value);
+            }
         }
 
         Some(("crc", sub_matches)) => {
             let addr = if let Some(a) = sub_matches.get_one::<String>("addr") {
-                a.parse().unwrap()
+                u32_from_hex_dec_str(a)
             } else {
                 0x08000000
             };
-            let (len_text, len) = if let Some(a) = sub_matches.get_one::<String>("length") {
-                let value = a.parse().unwrap();
-                let len_text = format!("CRC of {} bytes", value);
-                (len_text, Some(value))
-            } else {
-                let len_text = "CRC of available memory".to_string();
-                (len_text, None)
-            };
-            println!(
-                "{} starting from 0x{:08X} is 0x{:08X}",
-                len_text,
-                addr,
-                read_crc(&mut port, addr, len)
-            );
+            let len = sub_matches
+                .get_one::<String>("length")
+                .map(|a| u32_from_hex_dec_str(a));
+            read_crc(&mut port, info, addr, len);
         }
 
         Some(("erase", sub_matches)) => {
             let addr = if let Some(a) = sub_matches.get_one::<String>("addr") {
-                a.parse().unwrap()
+                u32_from_hex_dec_str(a)
             } else {
                 0x08000000
             };
-            let len = if let Some(a) = sub_matches.get_one::<String>("pages") {
-                let value = a.parse().unwrap();
-                Some(value)
+            let len = sub_matches
+                .get_one::<String>("pages")
+                .map(|a| u32_from_hex_dec_str(a));
+            erase(&mut port, info, loader_info.unwrap(), addr, len);
+        }
+
+        Some(("erase-eflash", sub_matches)) => {
+            let addr = if let Some(a) = sub_matches.get_one::<String>("addr") {
+                u32_from_hex_dec_str(a)
             } else {
-                None
+                0x00000000
             };
-            erase(&mut port, addr, len);
+            let len = sub_matches
+                .get_one::<String>("pages")
+                .map(|a| u32_from_hex_dec_str(a));
+            erase_eflash(&mut port, loader_info.unwrap(), addr, len);
         }
 
         Some(("halt", _)) => {
@@ -120,24 +182,45 @@ fn main() {
 
         Some(("read", sub_matches)) => {
             let addr = if let Some(a) = sub_matches.get_one::<String>("addr") {
-                a.parse().unwrap()
+                u32_from_hex_dec_str(a)
             } else {
-                0x08000000
+                FLASH_USERDATA_ADDRESS
             };
             let len = sub_matches
                 .get_one::<String>("length")
-                .map(|a| a.parse().unwrap());
+                .map(|a| u32_from_hex_dec_str(a));
             let filename = if let Some(a) = sub_matches.get_one::<String>("output") {
                 a
             } else {
                 "out.bin"
             };
-            std::fs::write(filename, read_c(&mut port, addr, len)).unwrap();
+            std::fs::write(filename, read_c(&mut port, info, addr, len)).unwrap();
+        }
+
+        Some(("read-eflash", sub_matches)) => {
+            let addr = if let Some(a) = sub_matches.get_one::<String>("addr") {
+                u32_from_hex_dec_str(a)
+            } else {
+                0x00000000
+            };
+            let len = sub_matches
+                .get_one::<String>("length")
+                .map(|a| u32_from_hex_dec_str(a));
+            let filename = if let Some(a) = sub_matches.get_one::<String>("output") {
+                a
+            } else {
+                "out-eflash.bin"
+            };
+            std::fs::write(
+                filename,
+                read_eflash(&mut port, loader_info.unwrap(), addr, len),
+            )
+            .unwrap();
         }
 
         Some(("reset", sub_matches)) => {
             let req = if sub_matches.get_flag("hard") {
-                cmd("reser -h")
+                cmd("reset -h")
             } else {
                 cmd("reset")
             };
@@ -153,23 +236,61 @@ fn main() {
 
         Some(("write", sub_matches)) => {
             let addr = if let Some(a) = sub_matches.get_one::<String>("addr") {
-                a.parse().unwrap()
+                u32_from_hex_dec_str(a)
             } else {
                 0x08000000
             };
             let len = sub_matches
                 .get_one::<String>("length")
-                .map(|a| a.parse().unwrap());
+                .map(|a| u32_from_hex_dec_str(a));
             let filename = if let Some(a) = sub_matches.get_one::<String>("input") {
                 a
             } else {
                 unreachable!();
             };
-            write_c(&mut port, std::fs::read(filename).unwrap(), addr, len);
+            write_c(
+                &mut port,
+                info,
+                loader_info.unwrap(),
+                std::fs::read(filename).unwrap(),
+                addr,
+                len,
+            );
+        }
+
+        Some(("write-eflash", sub_matches)) => {
+            let addr = if let Some(a) = sub_matches.get_one::<String>("addr") {
+                u32_from_hex_dec_str(a)
+            } else {
+                0x00000000
+            };
+            let len = sub_matches
+                .get_one::<String>("length")
+                .map(|a| u32_from_hex_dec_str(a));
+            let filename = if let Some(a) = sub_matches.get_one::<String>("input") {
+                a
+            } else {
+                unreachable!();
+            };
+            write_eflash(
+                &mut port,
+                loader_info.unwrap(),
+                std::fs::read(filename).unwrap(),
+                addr,
+                len,
+            );
         }
 
         None => unreachable!(),
 
         _ => (),
+    }
+}
+
+fn u32_from_hex_dec_str(a: &str) -> u32 {
+    if let Some(a) = a.strip_prefix("0x") {
+        u32::from_str_radix(a, 16).expect("address not a hex value")
+    } else {
+        u32::from_str_radix(a, 10).expect("address not a dec value")
     }
 }

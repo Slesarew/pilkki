@@ -3,6 +3,8 @@ use memmem::{Searcher, TwoWaySearcher};
 use serialport::SerialPort;
 use std::{io::Read, time::Duration};
 
+use crate::command::SPIPAGESIZE;
+
 pub type Port = Box<dyn SerialPort>;
 
 pub fn connect_port(port_name: Option<&String>) -> Result<Port, serialport::Error> {
@@ -12,7 +14,7 @@ pub fn connect_port(port_name: Option<&String>) -> Result<Port, serialport::Erro
     } else {
         &ports.first().unwrap().port_name
     };
-    println!("{}", port);
+    println!("Port {} detected", port);
     Ok(serialport::new(port, 9600)
         .timeout(Duration::from_millis(500))
         .open()
@@ -21,10 +23,16 @@ pub fn connect_port(port_name: Option<&String>) -> Result<Port, serialport::Erro
 
 pub fn communicate(port: &mut Port, input: &[u8]) -> Vec<u8> {
     write(port, input);
-    read_to_stars(port)
+    let res = read_to_stars(port);
+    let res_str = String::from_utf8(res.clone()).unwrap();
+    if res_str.contains("rror") || res_str.contains("nvalid") || res_str.contains("rong") {
+        panic!("Response:\n{}", res_str);
+    };
+    res
 }
 
 pub fn read_data(port: &mut Port, addr: u32, words: u32) -> Vec<u8> {
+    let addr = addr / 4 * 4;
     write(port, format!("rd {addr} {words}\n").as_bytes());
     let len = words * 4;
     let data = read_len(port, len);
@@ -33,8 +41,22 @@ pub fn read_data(port: &mut Port, addr: u32, words: u32) -> Vec<u8> {
             .try_into()
             .expect("reading exactly 4 bytes"),
     );
-    assert_eq!(b"Done".to_vec(), read_len(port, 4));
-    assert_eq!(crc, calculate_crc(&data));
+    assert_eq!(b"Done".to_vec(), read_len(port, 4), "Exited unsuccesfull");
+    assert_eq!(crc, calculate_crc(&data), "Corrupted data ");
+    data
+}
+
+pub fn read_eflash_data(port: &mut Port, addr: u32, pages: u32) -> Vec<u8> {
+    write(port, format!("spird {addr} {pages}\n").as_bytes());
+    let len = pages * SPIPAGESIZE;
+    let data = read_len(port, len);
+    let crc = u32::from_le_bytes(
+        read_len(port, 4)
+            .try_into()
+            .expect("reading exactly 4 bytes"),
+    );
+    assert_eq!(b"Done".to_vec(), read_len(port, 4), "Exited unsuccesfull");
+    assert_eq!(crc, calculate_crc(&data), "Corrupted data ");
     data
 }
 
@@ -50,9 +72,9 @@ fn write(port: &mut Port, input: &[u8]) {
 }
 
 fn read_to_stars(port: &mut Port) -> Vec<u8> {
-    let mut out = Vec::new();
+    let mut out: Vec<u8> = Vec::new();
     let searcher = TwoWaySearcher::new("***".as_bytes());
-    for _vahtikoira in 0..100 {
+    for _vahtikoira in 0..200 {
         let mut serial_buf = [0u8; 256];
         if port.read(&mut serial_buf).is_err() {
             continue;
@@ -72,7 +94,21 @@ fn read_len(port: &mut Port, len: u32) -> Vec<u8> {
     let mut out = Vec::new();
     let mut bytes = port.bytes();
     for _ in 0..len {
-        out.push(bytes.next().unwrap().unwrap());
+        let last = bytes.next().map(|a| a.ok()).flatten();
+        match last {
+            Some(a) => out.push(a),
+            None => {
+                if out.len() > 20 {
+                    //reasonable amount to output
+                    panic!("Reading stopped prematurely")
+                } else {
+                    panic!(
+                        "Reading failed. Response:\n{}",
+                        String::from_utf8(out).unwrap()
+                    );
+                }
+            }
+        };
     }
     out
 }

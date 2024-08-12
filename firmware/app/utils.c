@@ -50,6 +50,10 @@ extern uint32_t ErrorFlag;
 
 #define _DEVINFO_PART_FAMILY_MG                                  0x00000001UL     
 #define _DEVINFO_PART_FAMILY_BG                                  0x00000002UL     
+
+
+extern bool OutInv;
+
 /**********************************************************
  * Reads the unique ID of the target from the DI page.
  * 
@@ -417,9 +421,9 @@ bool resetTarget(void)
  **********************************************************/
 void hardResetTarget(void)
 {
-	HAL_GPIO_WritePin(iRST_GPIO_Port, iRST_Pin, GPIO_PIN_RESET);
-	HAL_Delay(10);
 	HAL_GPIO_WritePin(iRST_GPIO_Port, iRST_Pin, GPIO_PIN_SET);
+	HAL_Delay(10);
+	HAL_GPIO_WritePin(iRST_GPIO_Port, iRST_Pin, GPIO_PIN_RESET);
 }
 
 /**********************************************************
@@ -815,13 +819,30 @@ bool connectToTarget(void)
 
 	writeMem(CMU_BASE + 0x1068, 1 << 16); //Enable CMU clock
 	writeDP(0, 0x1E); //abort
-	
 
-	
-	
-
-
-	
 	return true;
 }
 
+void GPIO_WritePinOut()
+{
+	if (OutInv)
+	{
+		SWDIR_GPIO_Port->BSRR = SWDIR_Pin;
+	}
+	else
+	{
+		SWDIR_GPIO_Port->BRR = SWDIR_Pin;
+	}
+}
+
+void GPIO_WritePinIn()
+{
+	if (OutInv)
+	{
+		SWDIR_GPIO_Port->BRR = SWDIR_Pin;
+	}
+	else
+	{
+		SWDIR_GPIO_Port->BSRR = SWDIR_Pin;
+	}
+}

@@ -51,9 +51,9 @@
 #define APP_RX_DATA_SIZE  1024
 #define APP_TX_DATA_SIZE  1024
 /* USER CODE BEGIN EXPORTED_DEFINES */
-	 bool UsbCheckBusy(void);
-
-
+	 bool UsbCheckBusy();
+	 
+	 
 /* USER CODE END EXPORTED_DEFINES */
 
 /**
@@ -130,3 +130,4 @@ uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len);
 #endif
 
 #endif /* __USBD_CDC_IF_H__ */
+
